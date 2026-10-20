@@ -1,78 +1,113 @@
 # Boids Simulation
 
-A Python implementation of **Craig Reynolds’ Boids algorithm**, demonstrating emergent flocking behavior through three simple rules: **Separation**, **Alignment**, and **Cohesion**.  
-The simulation uses **Pygame** for real-time visualization and allows parameter tuning via command-line arguments.
+A Python/Pygame demonstration of flocking through separation, alignment and cohesion.
+Each boid reacts only to local neighbors. The first boid is magenta; red, green and
+blue circles show its separation, alignment and cohesion radii.
 
-## Overview
+## Setup (Windows PowerShell)
 
-Each boid moves independently based on local interactions with nearby boids.  
-Through three simple behavioral rules, complex and lifelike collective motion emerges **without centralized control**.
+Python 3.13 is the tested interpreter for the pinned dependencies.
 
-| Rule | Description | Color |
-|------|--------------|-------|
-| **Separation** | Avoid crowding to prevent collisions | Red |
-| **Alignment** | Match velocity with nearby boids | Green |
-| **Cohesion** | Move toward the local group center | Blue |
-
-## Features
-
-- Real-time 2D visualization using **Pygame**  
-- Adjustable behavior radii and strengths  
-- Optional **smooth decay** for gradual influence  
-- Soft boundary control (prevents boids from leaving the screen)  
-- Reproducible results via random seed  
-- Visual debugging: colored circles and vectors for the first boid  
-
-## Requirements
-
-- Python ≥ 3.8  
-- [NumPy](https://numpy.org/), [SciPy](https://scipy.org/), [Pygame](https://www.pygame.org/)  
-
-Install dependencies:
-```bash
-pip install numpy scipy pygame
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe boid.py
 ```
 
-## Usage
+No environment activation is required. In VS Code, choose
+`.venv\Scripts\python.exe` under **Python: Select Interpreter**.
 
-Run the simulation:
-```bash
-python boids.py
+```powershell
+.\.venv\Scripts\python.exe boid.py --smooth --boids_num 100
+.\.venv\Scripts\python.exe boid.py --help
 ```
 
-### Key arguments
+## Controls
 
-| Argument       | Default | Description               |
-| -------------- | ------- | ------------------------- |
-| `--boids_num`  | `50`    | Number of boids           |
-| `--boid_size`  | `8`     | Size of each boid         |
-| `--max_speed`  | `20.0`  | Maximum velocity          |
-| `--sep_radius` | `22`    | Separation radius         |
-| `--ali_radius` | `70`    | Alignment radius          |
-| `--coh_radius` | `110`   | Cohesion radius           |
-| `--sep_scalar` | `0.44`  | Separation strength       |
-| `--ali_scalar` | `0.08`  | Alignment strength        |
-| `--coh_scalar` | `0.09`  | Cohesion strength         |
-| `--smooth`     | —       | Enable smooth force decay |
-| `--seed`       | `603`   | Random seed               |
+Use the **Force weights** panel in the top-right corner to click or drag the red
+separation, green alignment and blue cohesion sliders. Values update immediately
+and are displayed to two decimal places. Each slider starts at a range of 0-2;
+larger command-line or keyboard values automatically expand that slider's range.
+Dragging beyond a track stops at its endpoints. Adjustments also work while paused
+and affect movement when you resume. The panel stays visible when debug vectors
+are hidden. Keyboard shortcuts change the same values shown by the sliders.
 
-Example:
-```bash
-python boids.py --smooth --boids_num 100 --sep_scalar 0.5 --ali_scalar 0.1 --coh_scalar 0.08
+| Key | Action |
+| --- | --- |
+| Space | Pause/resume |
+| R | Restore positions and velocities from the seed; retain current weights |
+| D | Toggle behavior radii and acceleration vectors |
+| 1 / 2 | Decrease/increase separation weight by 0.05 |
+| 3 / 4 | Decrease/increase alignment weight by 0.05 |
+| 5 / 6 | Decrease/increase cohesion weight by 0.05 |
+| Esc | Exit |
+
+Weights cannot go below zero. Current weights and rendering FPS appear in the window.
+Colored vectors show each behavior before the combined acceleration cap and boundary
+steering; the line in each boid's own color shows its final acceleration. Vectors
+are scaled by 0.5 for visibility.
+
+## Parameters
+
+| Argument | Default | Meaning |
+| --- | --- | --- |
+| `--boids_num` | 50 | Positive number of boids |
+| `--boid_size` | 8 | Circle radius in pixels |
+| `--max_speed` | 100 | Speed limit in pixels/second |
+| `--max_acceleration` | 150 | Combined acceleration limit in pixels/second squared |
+| `--delta_time` | 0.0166667 | Fixed simulation step in seconds; greater than 0 and at most 0.05 |
+| `--fps` | 60 | Rendering frame rate cap |
+| `--sep_radius` | 22 | Separation radius |
+| `--ali_radius` | 70 | Alignment radius |
+| `--coh_radius` | 110 | Cohesion radius |
+| `--sep_scalar` | 0.44 | Separation weight |
+| `--ali_scalar` | 0.8 | Velocity matching gain |
+| `--coh_scalar` | 0.09 | Attraction toward neighbors |
+| `--smooth` | off | Linearly fade each neighbor's contribution near its radius |
+| `--seed` | 603 | Nonnegative random seed |
+
+Radii, speed and acceleration limits must be positive and finite; weights must be
+finite and nonnegative. Size must fit within the 1080 x 720 window.
+
+## Simulation design
+
+- **Synchronous updates:** all behavior vectors are computed from the same positions
+  and velocities before any boid moves.
+- **Separation:** inverse-distance repulsion, capped per neighbor before averaging.
+  Exactly overlapping pairs receive deterministic opposite horizontal forces.
+- **Alignment:** use neighbor velocity minus the boid's own velocity, so matching
+  velocities produce no alignment acceleration.
+- **Cohesion:** average displacements toward neighbors.
+- **Smoothing:** multiply contributions by `1 - distance / radius`, then divide by
+  neighbor count. This fades the force at the radius rather than renormalizing weights.
+- **Boundaries:** soft inward steering plus containment and inward reflection if a
+  boid reaches an edge. Containment includes the circle radius.
+- **Timing:** an accumulator advances fixed steps independently of rendering FPS.
+  Catch-up is limited to eight steps per frame and frame time to 0.25 seconds. Under
+  sustained overload the simulation slows rather than accumulating unlimited work.
+- **Neighbor search:** rebuild a spatial grid each step and query nine nearby cells.
+  This reduces work for dispersed flocks; dense flocks can still approach O(N^2).
+- **Reproducibility:** resetting uses a local NumPy generator. Identical seeds,
+  parameters and simulation step counts reproduce the state in the same environment.
+
+The speed default changed from 20 to 100 and alignment weight from 0.08 to 0.8 when
+switching to real seconds and velocity matching. Old presets do not reproduce the
+previous motion. SciPy is no longer needed; two-dimensional distances use `math.hypot`.
+Importing `boid` does not parse arguments or create a window.
+
+## Verification
+
+```powershell
+.\.venv\Scripts\python.exe -B -m unittest -v
 ```
 
-## Visualization
+Tests run with SDL dummy video/audio drivers. They cover grid search against a full
+scan, order-independent updates, alignment, separation, overlaps, limits, seeded
+resets, argument validation, frame-rate independence, rendering, keyboard controls
+and mouse sliders.
 
-- White circles — boids
-- Magenta boid — main reference
-- Colored circles — behavioral radii (red, green, blue)
-- Colored lines — corresponding force vectors
+## Background
 
-## Author
-
-Developed as the final project for the **Computer Animation and Special Effects** course, intended for educational and research purposes to illustrate **decentralized swarm intelligence** and **emergent collective motion**.
-
-## 📜 Reference
-
-- [C. W. Reynolds, “Flocks, Herds and Schools: A Distributed Behavioral Model,” *ACM SIGGRAPH Computer Graphics*, vol. 21, no. 4, pp. 25–34, 1987.](https://doi.org/10.1145/37402.37406)
-- [Wikipedia – Boids Algorithm](https://en.wikipedia.org/wiki/Boids)
+Originally developed for a Computer Animation and Special Effects course.
+The flocking model is inspired by Craig Reynolds' 1987 paper,
+[Flocks, Herds and Schools: A Distributed Behavioral Model](https://doi.org/10.1145/37402.37406).
